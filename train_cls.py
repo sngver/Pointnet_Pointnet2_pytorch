@@ -69,7 +69,9 @@ def main(args):
 
     '''CREATE DIR'''
     timestr = str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M'))
-    experiment_dir = Path('./log/')
+    ''''''
+    experiment_dir = Path('/content/drive/My Drive/log/')
+    ''''''
     experiment_dir.mkdir(exist_ok=True)
     experiment_dir = experiment_dir.joinpath('classification')
     experiment_dir.mkdir(exist_ok=True)
