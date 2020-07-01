@@ -148,7 +148,8 @@ def main(args):
     '''TRANING'''
     logger.info('Start training...')
     for epoch in range(start_epoch,args.epoch):
-        log_string('Epoch %d (%d/%s):' % ('''global_'''epoch + 1, epoch + 1, args.epoch))
+        '''log_string('Epoch %d (%d/%s):' % (global_epoch + 1, epoch + 1, args.epoch))'''
+        log_string('Epoch %d (%d/%s):' % (epoch + 1, epoch + 1, args.epoch))
 
         scheduler.step()
         for batch_id, data in tqdm(enumerate(trainDataLoader, 0), total=len(trainDataLoader), smoothing=0.9):
