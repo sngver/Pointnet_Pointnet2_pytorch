@@ -65,7 +65,7 @@ def main(args):
 
     '''CREATE DIR'''
     ''''''
-    experiment_dir = Path('/content/drive/My Drive/log/classification') + args.log_dir
+    experiment_dir = '/content/drive/My Drive/log/classification/' + args.log_dir
     ''''''
 
     '''LOG'''
