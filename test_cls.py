@@ -64,7 +64,7 @@ def main(args):
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
     '''CREATE DIR'''
-    experiment_dir = 'log/classification/' + args.log_dir
+    experiment_dir = Path('/content/drive/My Drive/log/classification') + args.log_dir
 
     '''LOG'''
     args = parse_args()
