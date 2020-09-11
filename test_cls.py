@@ -16,6 +16,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
 
+DUMP_DIR = os.path.join(BASE_DIR,'dump')
+if not os.path.exists(DUMP_DIR): os.mkdir(DUMP_DIR)
 
 def parse_args():
     '''PARAMETERS'''
@@ -24,13 +26,17 @@ def parse_args():
     parser.add_argument('--gpu', type=str, default='0', help='specify gpu device')
     parser.add_argument('--num_point', type=int, default=1024, help='Point Number [default: 1024]')
     parser.add_argument('--log_dir', type=str, default='pointnet2_ssg_normal', help='Experiment root')
-    parser.add_argument('--normal', action='store_true', default=True, help='Whether to use normal information [default: False]')
+    parser.add_argument('--normal', action='store_true', default=False, help='Whether to use normal information [default: False]')
     parser.add_argument('--num_votes', type=int, default=3, help='Aggregate classification scores with voting [default: 3]')
+    parser.add_argument('--mydataset_pre', action='store_true', default=False, help='Pre-trained on ModelNet40, test on self-made dataset')
+    parser.add_argument('--mydataset', action='store_true', default=False, help='Train and test on self-made dataset')
+    parser.add_argument('--num_class', default=40, type=int, help='Number of classes')
     return parser.parse_args()
 
 def test(model, loader, num_class=40, vote_num=1):
     mean_correct = []
     class_acc = np.zeros((num_class,3))
+    fout = open(os.path.join(DUMP_DIR, 'pred_label.txt'), 'w')
     for j, data in tqdm(enumerate(loader), total=len(loader)):
         points, target = data
         target = target[:, 0]
@@ -43,6 +49,8 @@ def test(model, loader, num_class=40, vote_num=1):
             vote_pool += pred
         pred = vote_pool/vote_num
         pred_choice = pred.data.max(1)[1]
+        for i in range(list(pred_choice.shape)[0]):
+            fout.write('%d, %d\n' % (pred_choice[i], target[i]))
         for cat in np.unique(target.cpu()):
             classacc = pred_choice[target==cat].eq(target[target==cat].long().data).cpu().sum()
             class_acc[cat,0]+= classacc.item()/float(points[target==cat].size()[0])
@@ -53,6 +61,77 @@ def test(model, loader, num_class=40, vote_num=1):
     class_acc = np.mean(class_acc[:,2])
     instance_acc = np.mean(mean_correct)
     return instance_acc, class_acc
+
+def testmy(model, loader, num_class=3, vote_num=1):
+    mean_correct = []
+    class_acc = np.zeros((num_class,3))
+    fout = open(os.path.join(DUMP_DIR, 'pred_label.txt'), 'w')
+    for j, data in tqdm(enumerate(loader), total=len(loader)):
+        points, target = data
+        target = target[:, 0]
+        points = points.transpose(2, 1)
+        points, target = points.cuda(), target.cuda()
+        classifier = model.eval()
+        vote_pool = torch.zeros(target.size()[0],num_class).cuda()
+        for _ in range(vote_num):
+            pred, _ = classifier(points)
+            vote_pool += pred
+        pred = vote_pool/vote_num
+        pred_choice = pred.data.max(1)[1]
+        for i in range(list(pred_choice.shape)[0]):
+            fout.write('%d, %d\n' % (pred_choice[i], target[i]))
+        for cat in np.unique(target.cpu()):
+            classacc = pred_choice[target==cat].eq(target[target==cat].long().data).cpu().sum()
+            class_acc[cat,0]+= classacc.item()/float(points[target==cat].size()[0])
+            class_acc[cat,1]+=1
+        correct = pred_choice.eq(target.long().data).cpu().sum()
+        mean_correct.append(correct.item()/float(points.size()[0]))
+    class_acc[:,2] =  class_acc[:,0]/ class_acc[:,1]
+    class_acc = np.mean(class_acc[:,2])
+    instance_acc = np.mean(mean_correct)
+    return instance_acc, class_acc
+
+def test_pre(model, loader, num_class=40, vote_num=1):
+    mean_correct = []
+    class_acc = np.zeros((num_class,3))
+    fout = open(os.path.join(DUMP_DIR, 'pred_label.txt'), 'w')
+    for j, data in tqdm(enumerate(loader), total=len(loader)):
+        points, target = data
+        target = target[:, 0]
+        
+        # Given Actual Target Index
+        for i in range(list(target.shape)[0]):
+            if target[i] == 0:
+                target[i] = 5
+            elif target[i] == 1:
+                target[i] = 6
+            elif target[i] == 2:
+                target[i] = 10
+        #
+        
+        points = points.transpose(2, 1)
+        points, target = points.cuda(), target.cuda()
+        classifier = model.eval()
+        vote_pool = torch.zeros(target.size()[0],num_class).cuda()
+        for _ in range(vote_num):
+            pred, _ = classifier(points)
+            vote_pool += pred
+        pred = vote_pool/vote_num
+        pred_choice = pred.data.max(1)[1]
+        for i in range(list(pred_choice.shape)[0]):
+            fout.write('%d, %d\n' % (pred_choice[i], target[i]))
+        for cat in np.unique(target.cpu()):
+            classacc = pred_choice[target==cat].eq(target[target==cat].long().data).cpu().sum()
+            class_acc[cat,0]+= classacc.item()/float(points[target==cat].size()[0])
+            class_acc[cat,1]+=1
+        correct = pred_choice.eq(target.long().data).cpu().sum()
+        mean_correct.append(correct.item()/float(points.size()[0]))
+        print(float(points.size()[0]))
+    class_acc[:,2] =  class_acc[:,0]/ class_acc[:,1]
+    class_acc = np.mean(class_acc[[5,6,10],2])
+    instance_acc = np.mean(mean_correct)
+    return instance_acc, class_acc
+
 
 
 def main(args):
@@ -87,7 +166,7 @@ def main(args):
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=4)
 
     '''MODEL LOADING'''
-    num_class = 40
+    num_class = args.num_class
     model_name = os.listdir(experiment_dir+'/logs')[0].split('.')[0]
     MODEL = importlib.import_module(model_name)
 
@@ -97,7 +176,12 @@ def main(args):
     classifier.load_state_dict(checkpoint['model_state_dict'])
 
     with torch.no_grad():
-        instance_acc, class_acc = test(classifier.eval(), testDataLoader, vote_num=args.num_votes)
+        if args.mydataset_pre:
+            instance_acc, class_acc = test_pre(classifier.eval(), testDataLoader, vote_num=args.num_votes)
+        elif args.mydataset:
+            instance_acc, class_acc = testmy(classifier.eval(), testDataLoader, vote_num=args.num_votes)
+        else:
+            instance_acc, class_acc = test(classifier.eval(), testDataLoader, vote_num=args.num_votes)
         log_string('Test Instance Accuracy: %f, Class Accuracy: %f' % (instance_acc, class_acc))
 
 

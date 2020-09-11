@@ -34,6 +34,8 @@ def parse_args():
     parser.add_argument('--log_dir', type=str, default=None, help='experiment root')
     parser.add_argument('--decay_rate', type=float, default=1e-4, help='decay rate [default: 1e-4]')
     parser.add_argument('--normal', action='store_true', default=False, help='Whether to use normal information [default: False]')
+    parser.add_argument('--mydataset', action='store_true', default=False, help='Train and test on self-made dataset')
+    parser.add_argument('--num_class', default=40, type=int, help='Number of classes')
     return parser.parse_args()
 
 def test(model, loader, num_class=40):
@@ -58,6 +60,27 @@ def test(model, loader, num_class=40):
     instance_acc = np.mean(mean_correct)
     return instance_acc, class_acc
 
+def testmy(model, loader, num_class=3):
+    mean_correct = []
+    class_acc = np.zeros((num_class,3))
+    for j, data in tqdm(enumerate(loader), total=len(loader)):
+        points, target = data
+        target = target[:, 0]
+        points = points.transpose(2, 1)
+        points, target = points.cuda(), target.cuda()
+        classifier = model.eval()
+        pred, _ = classifier(points)
+        pred_choice = pred.data.max(1)[1]
+        for cat in np.unique(target.cpu()):
+            classacc = pred_choice[target==cat].eq(target[target==cat].long().data).cpu().sum()
+            class_acc[cat,0]+= classacc.item()/float(points[target==cat].size()[0])
+            class_acc[cat,1]+=1
+        correct = pred_choice.eq(target.long().data).cpu().sum()
+        mean_correct.append(correct.item()/float(points.size()[0]))
+    class_acc[:,2] =  class_acc[:,0]/ class_acc[:,1]
+    class_acc = np.mean(class_acc[:,2])
+    instance_acc = np.mean(mean_correct)
+    return instance_acc, class_acc
 
 def main(args):
     def log_string(str):
@@ -109,7 +132,7 @@ def main(args):
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=4)
 
     '''MODEL LOADING'''
-    num_class = 40
+    num_class = args.num_class
     MODEL = importlib.import_module(args.model)
     shutil.copy('./models/%s.py' % args.model, str(experiment_dir))
     shutil.copy('./models/pointnet_util.py', str(experiment_dir))
@@ -180,7 +203,10 @@ def main(args):
 
 
         with torch.no_grad():
-            instance_acc, class_acc = test(classifier.eval(), testDataLoader)
+            if not args.mydataset:
+                instance_acc, class_acc = test(classifier.eval(), testDataLoader)
+            else:
+                instance_acc, class_acc = testmy(classifier.eval(), testDataLoader)
 
             if (instance_acc >= best_instance_acc):
                 best_instance_acc = instance_acc
